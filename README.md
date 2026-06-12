@@ -2,7 +2,17 @@
 
 A comprehensive collection of technical indicator skills for charting, analysis, and custom indicator development using OpenAlgo. Works with **40+ AI coding agents** via [skills.sh](https://github.com/vercel-labs/skills) — including Claude Code, Cursor, Codex, OpenCode, Cline, Windsurf, GitHub Copilot, Gemini CLI, Roo Code, and more.
 
-Supports **Indian markets** via OpenAlgo and **US/Global markets** via yfinance. Includes 100+ Numba-optimized indicators, Plotly dark-themed charts, Dash and Streamlit web dashboards, real-time WebSocket feeds, multi-symbol scanners, and a custom indicator builder with Numba JIT + NumPy.
+Supports **Indian markets** via OpenAlgo and **US/Global markets** via yfinance. Includes 100+ indicators powered by the openalgo 2.x compiled Rust core, Plotly dark-themed charts, Dash and Streamlit web dashboards, real-time WebSocket feeds, multi-symbol scanners, and a custom indicator builder using vectorized NumPy on Rust-core primitives.
+
+## Powered by openalgo 2.x (Rust Core)
+
+As of openalgo 2.0, the indicator engine is a compiled Rust core (`openalgo._oaindicators`, built with PyO3) that ships inside the wheel — a plain `pip install openalgo` is all you need. Highlights:
+
+- **Compile-on-first-use dependencies removed** — the old LLVM-based runtime compiler stack is gone entirely. There is no runtime compilation, no first-call delay, and no compile cache; the very first call runs at full speed.
+- **Python 3.12+** — openalgo 2.x requires Python >= 3.12 (supports 3.12, 3.13, 3.14).
+- **Unchanged API** — `from openalgo import ta` works exactly as before; fully backward compatible.
+- **18 new TA-Lib-compatible indicators** — mom, rocp, rocr, rocr100, apo, midpoint, midprice, avgprice, medprice, typprice, wclprice, plus_dm, minus_dm, dx, adxr, stochf, linregangle, linregintercept.
+- **O(n) everywhere, benchmarked against TA-Lib** on 924k bars: the regression/statistics family (linreg, tsf, stdev, cci, macd, ...) runs faster than TA-Lib; the rest are on par. See the [benchmark results](https://github.com/marketcalls/openalgo-python-library/blob/master/benchmark/TALIB_PERF_COMPARE.md) and [TA-Lib compatibility notes](https://github.com/marketcalls/openalgo-python-library/blob/master/docs/TALIB_COMPATIBILITY.md).
 
 ## Quick Install
 
@@ -75,9 +85,9 @@ The `npx skills add` command detects which agents you have installed and places 
 
 | Command | What It Does |
 |---------|-------------|
-| `/indicator-setup` | Detects OS, creates venv, installs all packages (openalgo, plotly, dash, streamlit, numba, yfinance, matplotlib, seaborn), configures `.env` with API keys |
+| `/indicator-setup` | Detects OS, creates venv, installs all packages (openalgo, plotly, dash, streamlit, yfinance, matplotlib, seaborn), configures `.env` with API keys |
 | `/indicator-chart` | Charts any indicator on a symbol with Plotly dark theme — overlay or subplot, with signal markers and plain-language explanation |
-| `/custom-indicator` | Creates a custom indicator using Numba JIT + NumPy — generates `indicator.py` + `chart.py` + `benchmark.py` |
+| `/custom-indicator` | Creates a custom indicator using vectorized NumPy on Rust-core `ta` primitives — generates `indicator.py` + `chart.py` + `benchmark.py` |
 | `/indicator-dashboard` | Builds a Plotly Dash or Streamlit web application — single-symbol, multi-symbol, multi-timeframe, or scanner dashboard |
 | `/indicator-scanner` | Scans multiple symbols (NIFTY 50, BANKNIFTY stocks) with indicator conditions — RSI, EMA crossover, Supertrend, volume spike |
 | `/live-feed` | Real-time indicator computation on WebSocket streaming data — LTP, quote, or depth mode with rolling buffer |
@@ -96,7 +106,7 @@ The `npx skills add` command detects which agents you have installed and places 
 | Multi Dashboard | Web App | Multi-timeframe Dash app (5m/15m/1h/D grid) with confluence detection |
 | Streamlit Basic | Web App | Single-symbol Streamlit app with sidebar, metrics, plotly charts |
 | Streamlit Multi | Web App | Multi-timeframe Streamlit app with confluence summary |
-| Custom Indicator | Numba | Z-Score example with `@njit` core + pandas wrapper + benchmark |
+| Custom Indicator | NumPy | Z-Score example composing `ta` primitives + pandas wrapper + benchmark |
 | Live Feed | WebSocket | Real-time LTP feed with EMA/RSI computation on rolling buffer |
 | Scanner | Multi-Symbol | NIFTY 50 scanner with 5 scan types (RSI, EMA, Supertrend, Volume) |
 
@@ -104,12 +114,12 @@ The `npx skills add` command detects which agents you have installed and places 
 
 | Category | What's Covered |
 |----------|---------------|
-| **Indicators** | Complete 100+ indicator reference with signatures, parameters, return types. Trend (20), Momentum (9), Volatility (16), Volume (14), Oscillators (20+), Statistical (9), Hybrid (6+), Utilities |
-| **Data Fetching** | OpenAlgo history/quotes/depth/intervals, yfinance for US/Global, data normalization (datetime index, sort, strip timezone), option chain API |
+| **Indicators** | Complete 100+ indicator reference with signatures, parameters, return types. Trend (20), Momentum (9), Volatility (16), Volume (15), Oscillators (20+), Statistical (9), Hybrid (6+), TA-Lib Compatible (18), Utilities |
+| **Data Fetching** | OpenAlgo history/quotes/depth/intervals, yfinance for US/Global, data normalization (datetime index, sort, strip timezone), option chain + option greeks (IV, delta, gamma, theta, vega, rho) APIs |
 | **Plotting** | Plotly dark theme, candlestick overlays, multi-panel subplots, fill-between bands, color-coded direction, signal markers, save to HTML |
-| **Custom Indicators** | Numba `@njit(cache=True, nogil=True)` template patterns, single/multi-output, NaN handling, DO/DON'T rules, performance tips |
+| **Custom Indicators** | Compose from `openalgo.ta` Rust-core primitives + vectorized NumPy, single/multi-output, NaN handling, DO/DON'T rules, performance tips |
 | **WebSocket Feeds** | LTP/Quote/Depth subscription, polling stored data, unsubscribe/disconnect, real-time indicator computation with rolling buffer |
-| **Numba Optimization** | OpenAlgo numba_shim config, decorator patterns, what works inside `@njit`, NaN handling (critical), cache management, warmup, algorithm complexity |
+| **Performance (Rust Core)** | The compiled Rust core, first-call full speed (no compile step), O(n) guarantees, TA-Lib benchmark results, NumPy vectorization tips for custom code |
 | **Dash Dashboards** | Dash app structure, multi-indicator layout, dynamic subplot callbacks, stats cards, auto-refresh with `dcc.Interval` |
 | **Streamlit Dashboards** | Streamlit app structure, sidebar inputs, `st.plotly_chart()`, `st.metric()`, auto-refresh, scanner tables, dark theme |
 | **Multi-Timeframe** | Fetch multiple timeframes, same indicator across TFs, confluence detection (all bullish/bearish/mixed), MTF grid chart |
@@ -161,8 +171,10 @@ python -m venv venv
 source venv/bin/activate   # Linux/Mac
 # venv\Scripts\activate    # Windows
 
-pip install openalgo yfinance plotly dash dash-bootstrap-components streamlit numba numpy pandas python-dotenv websocket-client httpx scipy nbformat matplotlib seaborn ipywidgets
+pip install openalgo yfinance plotly dash dash-bootstrap-components streamlit numpy pandas python-dotenv websocket-client httpx scipy nbformat matplotlib seaborn ipywidgets
 ```
+
+> **Note**: openalgo 2.x requires Python 3.12 or newer. The compiled Rust indicator core ships inside the wheel — no extras or build tools needed.
 
 ### 4. Configure API Keys
 
@@ -201,7 +213,7 @@ Create a Plotly chart with indicator overlays or subplots. Auto-detects overlay 
 
 ### `/custom-indicator` — Build Custom Indicators
 
-Create a Numba-optimized custom indicator with chart and benchmark.
+Create a custom indicator from Rust-core `ta` primitives and vectorized NumPy, with chart and benchmark.
 
 ```
 /custom-indicator zscore
@@ -249,17 +261,17 @@ Stream live prices with indicator computation.
 
 ## Key Features
 
-### 100+ Numba-Optimized Indicators
+### 100+ Rust-Powered Indicators
 
-All indicators from the OpenAlgo `ta` library, compiled with Numba JIT for production-grade speed.
+All indicators from the OpenAlgo `ta` library run in a compiled Rust core for production-grade speed. Every indicator is O(n), and the first call runs at full speed — there is no runtime compilation step.
 
 ```python
 from openalgo import ta
 
-ema_20 = ta.ema(close, 20)                    # ~0.3ms on 100K bars
-rsi_14 = ta.rsi(close, 14)                    # ~1.8ms on 100K bars
-st, dir = ta.supertrend(high, low, close)      # ~1.9ms on 100K bars
-macd, sig, hist = ta.macd(close, 12, 26, 9)   # ~0.9ms on 100K bars
+ema_20 = ta.ema(close, 20)                    # trend overlay
+rsi_14 = ta.rsi(close, 14)                    # momentum oscillator
+st, dir = ta.supertrend(high, low, close)      # direction-colored trend
+macd, sig, hist = ta.macd(close, 12, 26, 9)   # three-output momentum
 ```
 
 ### Plotly Dark Theme Charts
@@ -272,20 +284,18 @@ fig = go.Figure()
 fig.update_layout(template="plotly_dark", xaxis_type="category")
 ```
 
-### Custom Indicators with Numba
+### Custom Indicators with NumPy + ta Primitives
 
-Build your own indicators with Numba `@njit(cache=True, nogil=True)` — never `fastmath=True` (breaks NaN handling).
+Build your own indicators by composing Rust-core `ta` primitives (`ta.sma`, `ta.ema`, `ta.stdev`, `ta.highest`, `ta.lowest`, `ta.true_range`, ...) with vectorized NumPy. No runtime compiler is needed — there is nothing to compile and no first-call delay.
 
 ```python
-from numba import njit
+from openalgo import ta
 import numpy as np
 
-@njit(cache=True, nogil=True)
-def _my_indicator(data, period):
-    n = len(data)
-    result = np.full(n, np.nan)
-    # Your logic here
-    return result
+def zscore(close, period=20):
+    mean = ta.sma(close, period)
+    std = ta.stdev(close, period)
+    return (np.asarray(close, dtype=np.float64) - mean) / std
 ```
 
 ### Signal Cleaning with EXREM
@@ -335,6 +345,9 @@ MIXED — 2/4 bullish
 | `client.multiquotes()` | Multi-symbol quotes | List of dicts |
 | `client.depth()` | Market depth (L5) | Dict |
 | `client.intervals()` | Available intervals | Dict |
+| `client.optionchain()` | Option chain around ATM | Dict |
+| `client.optiongreeks()` | Option greeks (delta, gamma, theta, vega, rho) + IV | Dict |
+| `client.expiry()` | Expiry dates for F&O | Dict |
 | `client.connect()` | WebSocket connect | None |
 | `client.subscribe_ltp()` | Live LTP stream | Callback |
 | `client.subscribe_quote()` | Live quote stream | Callback |
@@ -390,7 +403,7 @@ scanners/
 │               ├── plotting.md
 │               ├── custom-indicators.md
 │               ├── websocket-feeds.md
-│               ├── numba-optimization.md
+│               ├── performance.md
 │               ├── dashboard-patterns.md
 │               ├── streamlit-patterns.md
 │               ├── multi-timeframe.md
@@ -424,9 +437,9 @@ scanners/
 | `indicator-catalog.md` | Complete 100+ indicator reference with signatures, parameters, return types |
 | `data-fetching.md` | OpenAlgo history/quotes/depth, yfinance for US, data normalization, option chain |
 | `plotting.md` | Plotly candlestick overlays, multi-panel subplots, signal markers, save to HTML |
-| `custom-indicators.md` | Numba template patterns, single/multi-output, NaN handling, DO/DON'T rules |
+| `custom-indicators.md` | NumPy + `ta`-primitive composition patterns, single/multi-output, NaN handling, DO/DON'T rules |
 | `websocket-feeds.md` | LTP/Quote/Depth subscription, rolling buffer, real-time indicator computation |
-| `numba-optimization.md` | `@njit` patterns, NaN handling, cache management, warmup, O(n) algorithms |
+| `performance.md` | The Rust core, first-call full speed, O(n) guarantees, TA-Lib benchmarks, NumPy vectorization tips |
 | `dashboard-patterns.md` | Dash app structure, dynamic subplots, stats cards, auto-refresh |
 | `streamlit-patterns.md` | Streamlit app structure, sidebar inputs, `st.plotly_chart()`, metrics, scanner tables |
 | `multi-timeframe.md` | Multiple timeframes, confluence detection, MTF grid chart |
@@ -441,10 +454,11 @@ scanners/
 | **Trend** | 20 | SMA, EMA, WMA, DEMA, TEMA, HMA, VWMA, ALMA, KAMA, ZLEMA, T3, FRAMA, Supertrend, Ichimoku, Chande Kroll Stop, TRIMA, McGinley, VIDYA, Alligator, MA Envelopes |
 | **Momentum** | 9 | RSI, MACD, Stochastic, CCI, Williams %R, BOP, Elder Ray, Fisher Transform, Connors RSI |
 | **Volatility** | 16 | ATR, Bollinger Bands, Keltner, Donchian, Chaikin Volatility, NATR, RVI, Ultimate Oscillator, True Range, Mass Index, BB %B, BB Width, Chandelier Exit, Historical Volatility, Ulcer Index, STARC |
-| **Volume** | 14 | OBV, OBV Smoothed, VWAP, MFI, ADL, CMF, EMV, Force Index, NVI, PVI, Volume Oscillator, VROC, KVO, PVT |
+| **Volume** | 15 | OBV, OBV Smoothed, VWAP, MFI, ADL, CMF, EMV, Force Index, NVI, PVI, Volume Oscillator, VROC, KVO, PVT, RVOL |
 | **Oscillators** | 20+ | CMO, TRIX, UO, Awesome Oscillator, Accelerator, PPO, PO, DPO, Aroon Oscillator, Stochastic RSI, RVI Oscillator, Chaikin Oscillator, Choppiness, KST, TSI, Vortex, Gator, STC, Coppock, ROC |
 | **Statistical** | 9 | Linear Regression, LR Slope, Correlation, Beta, Variance, TSF, Median, Mode, Median Bands |
 | **Hybrid** | 6+ | ADX, DMI, Aroon, Pivot Points, Parabolic SAR, Williams Fractals, RWI |
+| **TA-Lib Compatible** | 18 | MOM, ROCP, ROCR, ROCR100, APO, MIDPOINT, MIDPRICE, AVGPRICE, MEDPRICE, TYPPRICE, WCLPRICE, PLUS_DM, MINUS_DM, DX, ADXR, STOCHF, LINEARREG_ANGLE, LINEARREG_INTERCEPT |
 | **Utilities** | 11 | Crossover, Crossunder, Cross, Highest, Lowest, Change, ROC, StdDev, EXREM, FLIP, VALUEWHEN, Rising, Falling |
 
 ## Data Sources

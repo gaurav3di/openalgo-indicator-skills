@@ -250,3 +250,63 @@ chain = client.optionchain(
 #           chain: [{strike, ce: {symbol, label, ltp, bid, ask, ...},
 #                             pe: {symbol, label, ltp, bid, ask, ...}}, ...]}
 ```
+
+---
+
+## Option Greeks
+
+`client.optiongreeks()` returns delta, gamma, theta, vega, rho plus implied volatility for any option contract. Use it for options-aware indicators and scanners: IV smile/skew charts, delta-neutral filters, theta-decay dashboards, IV percentile analysis.
+
+```python
+greeks = client.optiongreeks(
+    symbol="NIFTY25NOV2526000CE",   # OpenAlgo option symbol
+    exchange="NFO",
+    interest_rate=0.00,              # Risk-free rate (annualized)
+    underlying_symbol="NIFTY",       # Optional: spot reference
+    underlying_exchange="NSE_INDEX",
+)
+# Returns: {status, symbol, strike, option_type, option_price, spot_price,
+#           implied_volatility, days_to_expiry, expiry_date, interest_rate,
+#           greeks: {delta, gamma, theta, vega, rho}}
+
+iv = greeks["implied_volatility"]
+delta = greeks["greeks"]["delta"]
+```
+
+### Expiry Dates
+
+```python
+response = client.expiry(symbol="NIFTY", exchange="NFO", instrumenttype="options")
+# Returns: {status, data: ["10-JUL-25", "17-JUL-25", ...], message}
+```
+
+### Pattern: IV Smile Across the Chain
+
+Combine `optionchain()` + `optiongreeks()` to build IV-based analytics:
+
+```python
+chain = client.optionchain(
+    underlying="NIFTY", exchange="NSE_INDEX",
+    expiry_date="30DEC25", strike_count=10,
+)
+
+rows = []
+for entry in chain["chain"]:
+    for side in ("ce", "pe"):
+        leg = entry.get(side)
+        if not leg:
+            continue
+        g = client.optiongreeks(symbol=leg["symbol"], exchange="NFO")
+        if g.get("status") == "success":
+            rows.append({
+                "strike": entry["strike"],
+                "type": side.upper(),
+                "iv": g["implied_volatility"],
+                "delta": g["greeks"]["delta"],
+                "theta": g["greeks"]["theta"],
+            })
+
+iv_df = pd.DataFrame(rows)   # plot iv vs strike per side for the IV smile
+```
+
+Note: `optiongreeks()` is one HTTP call per contract — for full-chain sweeps, batch only the strikes you need (e.g., `strike_count=10`) and cache results in scanners.

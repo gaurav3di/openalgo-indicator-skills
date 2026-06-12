@@ -18,6 +18,8 @@ Parse `$ARGUMENTS` as: type symbol
 
 If no arguments, ask the user what kind of dashboard they want and whether they prefer Dash or Streamlit.
 
+**Framework choice**: Plotly Dash is the default. Build a Streamlit app ONLY when the user explicitly asks for Streamlit (says "streamlit" or picks a `streamlit-*` type). Never silently switch frameworks.
+
 ## Instructions
 
 1. Read the indicator-expert rules, especially:

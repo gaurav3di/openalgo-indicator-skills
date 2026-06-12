@@ -1,9 +1,8 @@
-openalgo
+openalgo>=2.0.1
 yfinance
 plotly
 dash
 dash-bootstrap-components
-numba
 numpy
 pandas
 python-dotenv

@@ -1,6 +1,6 @@
 ---
 name: indicator-setup
-description: Set up the Python environment for OpenAlgo indicator analysis. Installs openalgo, plotly, dash, streamlit, numba, yfinance, matplotlib, seaborn, and creates the project folder structure.
+description: Set up the Python environment for OpenAlgo indicator analysis. Installs openalgo, plotly, dash, streamlit, yfinance, matplotlib, seaborn, and creates the project folder structure.
 argument-hint: "[python-version]"
 allowed-tools: Bash, Read, Write, Glob, AskUserQuestion
 ---
@@ -10,6 +10,12 @@ Set up the complete Python environment for OpenAlgo indicator analysis, charting
 ## Arguments
 
 - `$0` = Python version (optional, default: `python3`). Examples: `python3.12`, `python3.13`
+
+**Note**: openalgo 2.x requires **Python 3.12 or newer** (3.12 / 3.13 / 3.14). Check the version before creating the venv and abort with a clear message if it is older:
+
+```bash
+python3 --version   # must be 3.12+
+```
 
 ## Steps
 
@@ -44,7 +50,7 @@ If user specified a Python version argument, use that instead of `python3`.
 Install all required packages:
 
 ```bash
-pip install openalgo yfinance plotly dash dash-bootstrap-components streamlit numba numpy pandas python-dotenv websocket-client httpx scipy nbformat matplotlib seaborn ipywidgets
+pip install openalgo yfinance plotly dash dash-bootstrap-components streamlit numpy pandas python-dotenv websocket-client httpx scipy nbformat matplotlib seaborn ipywidgets
 ```
 
 ### Step 4: Create Project Folders
@@ -94,7 +100,6 @@ from openalgo import ta
 import plotly
 import dash
 import streamlit
-import numba
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -107,7 +112,6 @@ print(f'  openalgo: {openalgo.__version__}')
 print(f'  plotly: {plotly.__version__}')
 print(f'  dash: {dash.__version__}')
 print(f'  streamlit: {streamlit.__version__}')
-print(f'  numba: {numba.__version__}')
 print(f'  numpy: {np.__version__}')
 print(f'  pandas: {pd.__version__}')
 print(f'  matplotlib: {matplotlib.__version__}')
@@ -140,4 +144,4 @@ Print a summary showing:
 - If the user already has a virtual environment, ask before creating a new one
 - NEVER commit `.env` files — they contain API keys
 - `python-dotenv` is used by all scripts to load `.env` via `find_dotenv()`
-- The openalgo library includes Numba-optimized indicators that compile on first use
+- openalgo 2.x indicators run on a compiled Rust core inside the wheel — no JIT compilation or warmup; requires Python 3.12+

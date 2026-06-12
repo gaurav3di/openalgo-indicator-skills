@@ -1,6 +1,6 @@
 # Indicator Catalog — Complete Reference
 
-All indicators are accessed via `from openalgo import ta`. Every indicator accepts numpy arrays, pandas Series, or lists. Output type matches input type.
+All indicators are accessed via `from openalgo import ta`. Every indicator accepts numpy arrays, pandas Series, or lists. Output type matches input type. Since openalgo 2.0, all kernels are computed by a compiled Rust core shipped inside the wheel — full speed from the first call.
 
 ---
 
@@ -79,7 +79,7 @@ All indicators are accessed via `from openalgo import ta`. Every indicator accep
 
 ---
 
-## Volume Indicators (14)
+## Volume Indicators (15)
 
 | Indicator | Method | Signature | Returns |
 |-----------|--------|-----------|---------|
@@ -97,6 +97,7 @@ All indicators are accessed via `from openalgo import ta`. Every indicator accep
 | VROC | `ta.vroc` | `(volume, period=25)` | Array |
 | KVO | `ta.kvo` | `(high, low, close, volume, trig=13, fast=34, slow=55)` | Tuple: (kvo, trigger) |
 | PVT | `ta.pvt` | `(close, volume)` | Array |
+| RVOL | `ta.rvol` | `(volume, period=20)` | Array (relative volume ratio) |
 
 ---
 
@@ -153,6 +154,33 @@ All indicators are accessed via `from openalgo import ta`. Every indicator accep
 | Parabolic SAR | `ta.sar` | `(high, low, acceleration=0.02, maximum=0.2)` | Tuple: (sar, trend) |
 | Williams Fractals | `ta.williams_fractals` | `(high, low, period=2)` | Tuple: (up_fractals, down_fractals) |
 | RWI | `ta.rwi` | `(high, low, close, period=14)` | Tuple: (rwi_high, rwi_low) |
+
+---
+
+## TA-Lib Compatible Indicators (18)
+
+Added in openalgo 2.0. These match TA-Lib definitions exactly (where openalgo intentionally follows TradingView/Pine conventions elsewhere — EMA/ATR/ADX seeding, etc. — the differences are documented in the library's TALIB_COMPATIBILITY notes).
+
+| Indicator | Method | Signature | Returns |
+|-----------|--------|-----------|---------|
+| Momentum | `ta.mom` | `(data, period=10)` | Array (data - data[period] ago) |
+| ROC Percentage | `ta.rocp` | `(data, period=10)` | Array ((price - prev) / prev) |
+| ROC Ratio | `ta.rocr` | `(data, period=10)` | Array (price / prev) |
+| ROC Ratio 100 | `ta.rocr100` | `(data, period=10)` | Array (price / prev * 100) |
+| APO | `ta.apo` | `(data, fast_period=12, slow_period=26, ma_type="SMA")` | Array (MA(fast) - MA(slow)) |
+| MidPoint | `ta.midpoint` | `(data, period=14)` | Array ((highest + lowest) / 2 of source) |
+| MidPrice | `ta.midprice` | `(high, low, period=14)` | Array ((highest(high) + lowest(low)) / 2) |
+| Average Price | `ta.avgprice` | `(open_prices, high, low, close)` | Array ((O + H + L + C) / 4) |
+| Median Price | `ta.medprice` | `(high, low)` | Array ((H + L) / 2) |
+| Typical Price | `ta.typprice` | `(high, low, close)` | Array ((H + L + C) / 3) |
+| Weighted Close | `ta.wclprice` | `(high, low, close)` | Array ((H + L + 2C) / 4) |
+| Plus DM | `ta.plus_dm` | `(high, low, period=14)` | Array (Wilder-summed +DM) |
+| Minus DM | `ta.minus_dm` | `(high, low, period=14)` | Array (Wilder-summed -DM) |
+| DX | `ta.dx` | `(high, low, close, period=14)` | Array (100 * abs(+DI - -DI) / (+DI + -DI)) |
+| ADXR | `ta.adxr` | `(high, low, close, period=14)` | Array ((ADX + ADX[period-1] ago) / 2) |
+| Stochastic Fast | `ta.stochf` | `(high, low, close, fastk_period=5, fastd_period=3)` | Tuple: (fastk, fastd) |
+| LinReg Angle | `ta.linregangle` | `(data, period=14)` | Array (degrees(atan(slope))) |
+| LinReg Intercept | `ta.linregintercept` | `(data, period=14)` | Array |
 
 ---
 

@@ -8,13 +8,13 @@ user-invocable: false
 
 ## Environment
 
-- Python with openalgo, pandas, numpy, plotly, dash, streamlit, numba
+- Python 3.12+ (required by openalgo 2.x) with openalgo, pandas, numpy, plotly, dash, streamlit
 - Data sources: OpenAlgo (Indian markets via `client.history()`, `client.quotes()`, `client.depth()`), yfinance (US/Global)
 - Real-time: OpenAlgo WebSocket (`client.connect()`, `subscribe_ltp`, `subscribe_quote`, `subscribe_depth`)
-- Indicators: **openalgo.ta** (ALWAYS — 100+ Numba-optimized indicators)
+- Indicators: **openalgo.ta** (ALWAYS — 100+ indicators computed by a compiled Rust core, full speed from the first call)
 - Charts: Plotly with `template="plotly_dark"`
-- Dashboards: Plotly Dash with `dash-bootstrap-components` OR Streamlit with `st.plotly_chart()`
-- Custom indicators: Numba `@njit(cache=True, nogil=True)` + NumPy
+- Dashboards: Plotly Dash with `dash-bootstrap-components` (default) OR Streamlit with `st.plotly_chart()` — use Streamlit only when the user explicitly asks for it
+- Custom indicators: vectorized NumPy composed from openalgo.ta primitives (Rust core — no JIT, no warmup)
 - API keys loaded from single root `.env` via `python-dotenv` + `find_dotenv()` — never hardcode keys
 - Scripts go in appropriate directories (charts/, dashboards/, custom_indicators/, scanners/) created on-demand
 - Never use icons/emojis in code or logger output
@@ -25,7 +25,7 @@ user-invocable: false
 2. **Data normalization**: Always convert DataFrame index to datetime, sort, and strip timezone after fetching.
 3. **Signal cleaning**: Always use `ta.exrem()` after generating raw buy/sell signals. Always `.fillna(False)` before exrem.
 4. **Plotly dark theme**: All charts use `template="plotly_dark"` with `xaxis type="category"` for candlesticks.
-5. **Numba for custom indicators**: Use `@njit(cache=True, nogil=True)` — never `fastmath=True` (breaks NaN handling).
+5. **Custom indicators**: Compose from openalgo.ta primitives (`ta.sma`, `ta.stdev`, `ta.bbands`, ...) plus vectorized NumPy. Never reimplement built-ins; no JIT or warmup is needed.
 6. **Input flexibility**: openalgo.ta accepts numpy arrays, pandas Series, or lists. Output matches input type.
 7. **WebSocket feeds**: Use `client.connect()`, `client.subscribe_ltp()` / `subscribe_quote()` / `subscribe_depth()` for real-time data.
 8. **Environment**: Load `.env` from project root via `find_dotenv()` — never hardcode API keys.
@@ -50,6 +50,9 @@ user-invocable: false
 | `client.multiquotes(symbols=[...])` | Multi-symbol quotes | List of quote dicts |
 | `client.depth(symbol, exchange)` | Market depth (L5) | Dict (bids, asks, ohlc, volume, oi) |
 | `client.intervals()` | Available intervals | Dict (minutes, hours, days, weeks, months) |
+| `client.optionchain(underlying, exchange, expiry_date, strike_count)` | Option chain around ATM | Dict (underlying_ltp, atm_strike, chain with ce/pe per strike) |
+| `client.optiongreeks(symbol, exchange, interest_rate, ...)` | Option greeks + IV | Dict (greeks: delta/gamma/theta/vega/rho, implied_volatility, days_to_expiry) |
+| `client.expiry(symbol, exchange, instrumenttype)` | Expiry dates list | Dict (data: list of expiry dates) |
 | `client.connect()` | WebSocket connect | None (sets up WS connection) |
 | `client.subscribe_ltp(instruments, callback)` | Live LTP stream | Callback with `{symbol, exchange, ltp}` |
 | `client.subscribe_quote(instruments, callback)` | Live quote stream | Callback with `{symbol, exchange, ohlc, ltp, volume}` |
@@ -68,8 +71,8 @@ All indicators accessed via `from openalgo import ta`:
 ### Volatility (16)
 `ta.atr`, `ta.bbands`, `ta.keltner`, `ta.donchian`, `ta.chaikin_volatility`, `ta.natr`, `ta.rvi`, `ta.ultimate_oscillator`, `ta.true_range`, `ta.massindex`, `ta.bb_percent`, `ta.bb_width`, `ta.chandelier_exit`, `ta.historical_volatility`, `ta.ulcer_index`, `ta.starc`
 
-### Volume (14)
-`ta.obv`, `ta.obv_smoothed`, `ta.vwap`, `ta.mfi`, `ta.adl`, `ta.cmf`, `ta.emv`, `ta.force_index`, `ta.nvi`, `ta.pvi`, `ta.volosc`, `ta.vroc`, `ta.kvo`, `ta.pvt`
+### Volume (15)
+`ta.obv`, `ta.obv_smoothed`, `ta.vwap`, `ta.mfi`, `ta.adl`, `ta.cmf`, `ta.emv`, `ta.force_index`, `ta.nvi`, `ta.pvi`, `ta.volosc`, `ta.vroc`, `ta.kvo`, `ta.pvt`, `ta.rvol`
 
 ### Oscillators (20+)
 `ta.cmo`, `ta.trix`, `ta.uo_oscillator`, `ta.awesome_oscillator`, `ta.accelerator_oscillator`, `ta.ppo`, `ta.po`, `ta.dpo`, `ta.aroon_oscillator`, `ta.stoch_rsi`, `ta.rvi_oscillator`, `ta.cho`, `ta.chop`, `ta.kst`, `ta.tsi`, `ta.vortex`, `ta.gator_oscillator`, `ta.stc`, `ta.coppock`, `ta.roc`
@@ -79,6 +82,9 @@ All indicators accessed via `from openalgo import ta`:
 
 ### Hybrid (6+)
 `ta.adx`, `ta.dmi`, `ta.aroon`, `ta.pivot_points`, `ta.sar`, `ta.williams_fractals`, `ta.rwi`
+
+### TA-Lib Compatible (18, new in openalgo 2.0)
+`ta.mom`, `ta.rocp`, `ta.rocr`, `ta.rocr100`, `ta.apo`, `ta.midpoint`, `ta.midprice`, `ta.avgprice`, `ta.medprice`, `ta.typprice`, `ta.wclprice`, `ta.plus_dm`, `ta.minus_dm`, `ta.dx`, `ta.adxr`, `ta.stochf`, `ta.linregangle`, `ta.linregintercept`
 
 ### Utilities
 `ta.crossover`, `ta.crossunder`, `ta.cross`, `ta.highest`, `ta.lowest`, `ta.change`, `ta.roc`, `ta.stdev`, `ta.exrem`, `ta.flip`, `ta.valuewhen`, `ta.rising`, `ta.falling`
@@ -92,9 +98,9 @@ Detailed reference for each topic is in `rules/`:
 | [indicator-catalog](rules/indicator-catalog.md) | Complete 100+ indicator reference with signatures and parameters |
 | [data-fetching](rules/data-fetching.md) | OpenAlgo history/quotes/depth, yfinance, data normalization |
 | [plotting](rules/plotting.md) | Plotly candlestick, overlay, subplot, multi-panel charts |
-| [custom-indicators](rules/custom-indicators.md) | Building custom indicators with Numba + NumPy |
+| [custom-indicators](rules/custom-indicators.md) | Building custom indicators with vectorized NumPy + ta primitives |
 | [websocket-feeds](rules/websocket-feeds.md) | Real-time LTP/Quote/Depth streaming via WebSocket |
-| [numba-optimization](rules/numba-optimization.md) | Numba JIT patterns, cache, nogil, NaN handling |
+| [performance](rules/performance.md) | Rust core performance, O(n) guarantees, benchmarking |
 | [dashboard-patterns](rules/dashboard-patterns.md) | Plotly Dash web applications with callbacks |
 | [streamlit-patterns](rules/streamlit-patterns.md) | Streamlit web applications with sidebar, metrics, plotly charts |
 | [multi-timeframe](rules/multi-timeframe.md) | Multi-timeframe indicator analysis |
@@ -116,7 +122,7 @@ Detailed reference for each topic is in `rules/`:
 | Multi Dashboard | `assets/dashboard_multi/app.py` | Multi-symbol multi-timeframe dashboard |
 | Streamlit Basic | `assets/streamlit_basic/app.py` | Single-symbol Streamlit app |
 | Streamlit Multi | `assets/streamlit_multi/app.py` | Multi-timeframe Streamlit app |
-| Custom Indicator | `assets/custom_indicator/template.py` | Numba custom indicator template |
+| Custom Indicator | `assets/custom_indicator/template.py` | NumPy custom indicator template (composes ta primitives) |
 | Live Feed | `assets/live_feed/template.py` | WebSocket real-time indicator |
 | Scanner | `assets/scanner/template.py` | Multi-symbol indicator scanner |
 

@@ -1,12 +1,12 @@
-# Custom Indicators — Building with Numba + NumPy
+# Custom Indicators — Building with NumPy + openalgo Primitives
 
 ## Architecture
 
-Custom indicators follow the same pattern as built-in openalgo indicators:
+Since openalgo 2.0, all built-in indicators run in a compiled Rust core. Custom indicators get the same speed by composition:
 
-1. **Core computation**: Numba `@njit` function operating on numpy arrays
-2. **Wrapper class**: Python class inheriting from `BaseIndicator` for type handling
-3. **Registration**: Add to `ta` API or use standalone
+1. **Core computation**: vectorized NumPy that composes openalgo `ta` primitives (`ta.sma`, `ta.stdev`, `ta.bbands`, ... — all Rust-backed, all O(n))
+2. **Public wrapper**: a plain Python function that handles pandas Series / numpy / list inputs and preserves the index
+3. **No JIT, no warmup**: there is nothing to compile — the first call runs at full speed
 
 ---
 
@@ -14,40 +14,25 @@ Custom indicators follow the same pattern as built-in openalgo indicators:
 
 ```python
 import numpy as np
-from numba import njit
+import pandas as pd
 from openalgo import ta
 
-@njit(cache=True, nogil=True)
-def _compute_zscore(data: np.ndarray, period: int) -> np.ndarray:
-    """Z-Score: (value - mean) / stdev over rolling period."""
-    n = len(data)
-    result = np.full(n, np.nan)
 
-    for i in range(period - 1, n):
-        # Rolling mean
-        sum_val = 0.0
-        for j in range(i - period + 1, i + 1):
-            sum_val += data[j]
-        mean = sum_val / period
+def _compute_zscore(arr: np.ndarray, period: int) -> np.ndarray:
+    """Z-Score: (value - mean) / stdev over rolling period. Fully vectorized."""
+    mean = ta.sma(arr, period)      # Rust core
+    std = ta.stdev(arr, period)     # Rust core
 
-        # Rolling stdev
-        sum_sq = 0.0
-        for j in range(i - period + 1, i + 1):
-            diff = data[j] - mean
-            sum_sq += diff * diff
-        std = np.sqrt(sum_sq / period)
-
-        if std > 0:
-            result[i] = (data[i] - mean) / std
-        else:
-            result[i] = 0.0
-
-    return result
+    z = np.full(len(arr), np.nan)
+    valid = ~np.isnan(mean) & ~np.isnan(std)
+    nonzero = valid & (std > 0)
+    z[nonzero] = (arr[nonzero] - mean[nonzero]) / std[nonzero]
+    z[valid & (std == 0)] = 0.0
+    return z
 
 
 def zscore(data, period=20):
     """Z-Score indicator with pandas/numpy support."""
-    import pandas as pd
     if isinstance(data, pd.Series):
         idx = data.index
         result = _compute_zscore(data.values.astype(np.float64), period)
@@ -59,114 +44,89 @@ def zscore(data, period=20):
 
 ## Template: Multi-Output Custom Indicator
 
+Squeeze Momentum — Bollinger Bands inside Keltner Channel means volatility is compressed. With `ta` primitives this is a few lines:
+
 ```python
-from numba import njit
 import numpy as np
-from typing import Tuple
+from openalgo import ta
 
-@njit(cache=True, nogil=True)
-def _compute_squeeze(close: np.ndarray, high: np.ndarray, low: np.ndarray,
-                     bb_period: int, bb_mult: float,
-                     kc_period: int, kc_mult: float) -> Tuple[np.ndarray, np.ndarray]:
-    """Squeeze Momentum: Bollinger inside Keltner = squeeze on."""
-    n = len(close)
-    squeeze_on = np.zeros(n, dtype=np.float64)   # 1 = squeeze, 0 = no squeeze
-    momentum = np.full(n, np.nan)
 
-    for i in range(max(bb_period, kc_period) - 1, n):
-        # Bollinger Bands width
-        bb_sum = 0.0
-        for j in range(i - bb_period + 1, i + 1):
-            bb_sum += close[j]
-        bb_mean = bb_sum / bb_period
-        bb_sq = 0.0
-        for j in range(i - bb_period + 1, i + 1):
-            diff = close[j] - bb_mean
-            bb_sq += diff * diff
-        bb_std = np.sqrt(bb_sq / bb_period)
-        bb_upper = bb_mean + bb_mult * bb_std
-        bb_lower = bb_mean - bb_mult * bb_std
+def squeeze(high, low, close,
+            bb_period=20, bb_mult=2.0,
+            kc_period=20, kc_atr=10, kc_mult=1.5):
+    """Squeeze Momentum: returns (squeeze_on, momentum).
 
-        # Keltner Channel width (using simple ATR approximation)
-        kc_sum = 0.0
-        tr_sum = 0.0
-        for j in range(i - kc_period + 1, i + 1):
-            kc_sum += close[j]
-            tr = high[j] - low[j]
-            if j > 0:
-                tr = max(tr, abs(high[j] - close[j - 1]))
-                tr = max(tr, abs(low[j] - close[j - 1]))
-            tr_sum += tr
-        kc_mean = kc_sum / kc_period
-        kc_atr = tr_sum / kc_period
-        kc_upper = kc_mean + kc_mult * kc_atr
-        kc_lower = kc_mean - kc_mult * kc_atr
+    squeeze_on: boolean array — True while BB is inside KC (volatility compressed)
+    momentum:   distance of close from the midpoint of the recent range
+    """
+    bb_upper, bb_mid, bb_lower = ta.bbands(close, bb_period, bb_mult)
+    kc_upper, kc_mid, kc_lower = ta.keltner(high, low, close, kc_period, kc_atr, kc_mult)
 
-        # Squeeze: BB inside KC
-        if bb_upper < kc_upper and bb_lower > kc_lower:
-            squeeze_on[i] = 1.0
+    squeeze_on = (bb_upper < kc_upper) & (bb_lower > kc_lower)
 
-        # Momentum: midline of BB minus midline of KC
-        momentum[i] = (bb_mean) - (kc_mean)
+    # Momentum: close vs midpoint of (highest high + lowest low + sma) / range midline
+    hh = ta.highest(high, kc_period)
+    ll = ta.lowest(low, kc_period)
+    midline = (hh + ll) / 2.0
+    momentum = np.asarray(close, dtype=np.float64) - (midline + bb_mid) / 2.0
 
     return squeeze_on, momentum
 ```
 
 ---
 
-## Numba Rules (MUST FOLLOW)
+## NumPy Rules (MUST FOLLOW)
 
 ### DO
-- Use `@njit(cache=True, nogil=True)` for all compute functions
+- **Compose from `ta` primitives first** — they run in the Rust core and are O(n)
 - Use `np.full(n, np.nan)` to initialize output arrays
-- Use explicit `for` loops (Numba compiles them to machine code)
-- Use `np.isnan()` for NaN checks
-- Use `np.sqrt()`, `np.abs()`, `np.log()` for math
-- Return numpy arrays (float64)
-- Type-annotate function signatures
+- Vectorize with array expressions, `np.where`, and boolean masks
+- Guard divisions with masks or `np.errstate(invalid="ignore", divide="ignore")`
+- Respect the NaN warm-up that primitives emit (mask on `~np.isnan(...)`)
+- Return float64 numpy arrays from core functions
 
 ### DO NOT
-- Never use `fastmath=True` (breaks NaN handling via `np.isnan()`)
-- Never use Python objects (dicts, lists of varying types, classes) inside `@njit`
-- Never use pandas inside `@njit` — convert to numpy first
-- Never use `try/except` inside `@njit`
-- Never use string operations inside `@njit`
-- Never call non-jitted Python functions from inside `@njit`
+- Never reimplement an indicator that already exists in `openalgo.ta` (100+ available)
+- Never write per-bar Python loops over large arrays when a vectorized form exists
+- Never divide by a rolling value without masking zeros/NaN
+- Never drop the warm-up NaNs silently — downstream signal code must see them
+
+### Path-Dependent Indicators
+
+Some indicators carry sequential state (each bar depends on the previous output). Before writing a loop, check whether a primitive already provides the recursion: `ta.ema` (exponential), `ta.atr` (Wilder), `ta.supertrend` (band-flip logic), `ta.sar`. If the recursion is genuinely custom, a plain Python loop still works — keep it O(n), operate on float64 numpy arrays, and note that it will be slower than vectorized code on very large inputs.
 
 ### NaN Handling Pattern
 
 ```python
-@njit(cache=True, nogil=True)
-def my_indicator(data: np.ndarray, period: int) -> np.ndarray:
-    n = len(data)
-    result = np.full(n, np.nan)
-
-    # Skip NaN in input
-    for i in range(period - 1, n):
-        if np.isnan(data[i]):
-            continue
-        # ... compute ...
-        result[i] = computed_value
-
-    return result
+def my_indicator(arr: np.ndarray, period: int) -> np.ndarray:
+    base = ta.sma(arr, period)              # NaN for the first period-1 bars
+    out = np.full(len(arr), np.nan)
+    m = ~np.isnan(base)                     # only compute where inputs are valid
+    out[m] = arr[m] - base[m]
+    return out
 ```
 
 ---
 
-## Using openalgo Utilities Inside Custom Indicators
+## Using openalgo Primitives as Building Blocks
 
-You can call existing utility functions as building blocks:
+All public `ta` methods accept numpy/pandas/list and run in the Rust core:
 
 ```python
-from openalgo.indicators.utils import sma, ema, stdev, highest, lowest, true_range
+from openalgo import ta
 
-@njit(cache=True, nogil=True)
-def my_channel(high, low, close, period):
-    """Custom channel using built-in utilities."""
-    upper = highest(high, period)
-    lower = lowest(low, period)
-    mid = sma(close, period)
-    width = (upper - lower) / mid * 100  # Width as % of mid
+# Rolling math:    ta.sma, ta.ema, ta.wma, ta.stdev, ta.highest, ta.lowest
+# Price action:    ta.true_range, ta.atr, ta.change, ta.roc
+# Bands/channels:  ta.bbands, ta.keltner, ta.donchian
+# Signals:         ta.crossover, ta.crossunder, ta.exrem, ta.rising, ta.falling
+
+
+def my_channel(high, low, close, period=20):
+    """Custom channel composed entirely from Rust-core primitives."""
+    upper = ta.highest(high, period)
+    lower = ta.lowest(low, period)
+    mid = ta.sma(close, period)
+    width = np.where(mid != 0, (upper - lower) / mid * 100.0, np.nan)
     return upper, mid, lower, width
 ```
 
@@ -174,19 +134,18 @@ def my_channel(high, low, close, period):
 
 ## Performance Tips
 
-1. **Pre-compute shared arrays**: If multiple indicators need the same rolling value, compute once
-2. **Avoid redundant loops**: Combine calculations into a single pass when possible
-3. **Use O(n) algorithms**: Rolling sum instead of per-bar sum, deque for highest/lowest
-4. **Cache warming**: First call compiles; subsequent calls use cached bytecode
-5. **Test with large arrays**: Always benchmark on 100k+ bars to verify O(n) scaling
+1. **Compose from primitives**: every `ta` call is Rust — chaining a few primitives beats hand-written Python every time
+2. **Pre-compute shared arrays**: if multiple outputs need the same rolling value, compute it once
+3. **Vectorize**: one array expression over 500k bars is fast; 500k loop iterations in Python are not
+4. **No warmup needed**: benchmark directly — there is no JIT compile on the first call
+5. **Test with large arrays**: always benchmark on 100k+ bars to verify O(n) scaling
 
 ```python
 # Benchmark pattern
 import time
-data = np.random.randn(500_000)
-# Warmup
-_ = my_indicator(data, 20)
-# Benchmark
+import numpy as np
+
+data = np.random.randn(500_000).cumsum() + 1000
 t0 = time.perf_counter()
 _ = my_indicator(data, 20)
 elapsed = (time.perf_counter() - t0) * 1000

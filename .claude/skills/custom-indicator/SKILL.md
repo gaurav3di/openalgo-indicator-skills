@@ -1,11 +1,11 @@
 ---
 name: custom-indicator
-description: Create a custom technical indicator using Numba JIT + NumPy. Generates production-grade, O(n) optimized indicator functions with charting and benchmarking.
+description: Create a custom technical indicator using vectorized NumPy on top of openalgo's Rust-core ta primitives. Generates production-grade, O(n) indicator functions with charting and benchmarking.
 argument-hint: "[indicator-name]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
-Create a custom technical indicator with Numba JIT compilation for production-grade speed.
+Create a custom technical indicator by composing openalgo's Rust-core `ta` primitives with vectorized NumPy.
 
 ## Arguments
 
@@ -16,10 +16,10 @@ If no arguments, ask the user what indicator they want to build.
 ## Instructions
 
 1. Read the indicator-expert rules, especially:
-   - `rules/custom-indicators.md` — Numba patterns and templates
-   - `rules/numba-optimization.md` — Performance best practices
+   - `rules/custom-indicators.md` — NumPy + ta-primitive patterns and templates
+   - `rules/performance.md` — Rust core performance, O(n) guarantees, benchmarking
    - `rules/indicator-catalog.md` — Check if indicator already exists in openalgo.ta
-2. **Check first**: If the indicator already exists in `openalgo.ta`, tell the user and show the existing API
+2. **Check first**: If the indicator already exists in `openalgo.ta` (100+ indicators), tell the user and show the existing API
 3. Create `custom_indicators/{indicator_name}/` directory (on-demand)
 4. Create `{indicator_name}.py` with:
 
@@ -32,16 +32,17 @@ Description: {what it measures}
 Category: {trend/momentum/volatility/volume/oscillator}
 """
 import numpy as np
-from numba import njit
 import pandas as pd
+from openalgo import ta
 
-# --- Core Computation (Numba JIT) ---
-@njit(cache=True, nogil=True)
-def _compute_{name}(data: np.ndarray, period: int) -> np.ndarray:
-    """Numba-compiled core computation."""
-    n = len(data)
+# --- Core Computation (vectorized NumPy on ta primitives) ---
+def _compute_{name}(arr: np.ndarray, period: int) -> np.ndarray:
+    """Vectorized core computation built on Rust-core primitives."""
+    n = len(arr)
     result = np.full(n, np.nan)
-    # ... O(n) algorithm ...
+    # Compose from ta primitives (they run in Rust):
+    # mean = ta.sma(arr, period); std = ta.stdev(arr, period); ...
+    # then combine with NumPy array math (np.where, masks)
     return result
 
 # --- Public API ---
@@ -80,7 +81,7 @@ from {indicator_name} import {name}
 # ... fetch data, compute indicator, create chart ...
 ```
 
-6. Create `benchmark.py` for performance testing:
+6. Create `benchmark.py` for performance testing (no warmup needed — the Rust core runs at full speed from the first call):
 
 ```python
 """Benchmark the custom indicator."""
@@ -88,44 +89,42 @@ import numpy as np
 import time
 from {indicator_name} import {name}
 
-# Warmup
-data = np.random.randn(1000)
-_ = {name}(data, 20)
-
-# Benchmark on different sizes
 for size in [10_000, 100_000, 500_000]:
-    data = np.random.randn(size)
+    data = np.random.randn(size).cumsum() + 1000
     t0 = time.perf_counter()
     _ = {name}(data, 20)
     elapsed = (time.perf_counter() - t0) * 1000
     print(f"{size:>10,} bars: {elapsed:>8.2f}ms")
 ```
 
-## Numba Rules (CRITICAL)
+## NumPy Rules (CRITICAL)
 
 ### MUST DO
-- `@njit(cache=True, nogil=True)` on all compute functions
+- Compose from `ta` primitives wherever possible — they run in the Rust core
 - `np.full(n, np.nan)` to initialize output arrays
-- Use `np.isnan()` for NaN checks
-- Explicit `for` loops (Numba compiles to machine code)
-- O(n) algorithms: rolling sum, EMA recursion, deque-based extrema
+- Vectorize with array expressions, `np.where`, and boolean masks
+- Guard divisions: `np.errstate(invalid="ignore", divide="ignore")` plus a safe denominator mask
+- Respect NaN warm-up periods from the primitives (mask on `~np.isnan(...)`)
 - Float64 for all numeric arrays
+- O(n) algorithms only
 
 ### MUST NOT
-- Never `fastmath=True` (breaks `np.isnan()`)
-- Never use pandas inside `@njit`
-- Never use try/except, dicts, sets, strings inside `@njit`
-- Never call non-jitted functions from inside `@njit`
+- Never reimplement an indicator that already exists in `openalgo.ta`
+- Never write per-bar Python loops over large arrays — vectorize instead
+- Never divide without masking zero/NaN denominators
+- If the indicator is genuinely path-dependent (sequential state no primitive covers), check whether `ta.ema` / Wilder-style primitives already provide the recursion first; a plain Python loop is a last resort — keep it O(n) and document the trade-off
 
 ### Available Building Blocks
 
-These existing functions can be called inside `@njit`:
+Public `ta` methods that run in the Rust core:
 
 ```python
-from openalgo.indicators.utils import (
-    sma, ema, ema_wilder, stdev, true_range, atr_wilder,
-    highest, lowest, rolling_sum, crossover, crossunder
-)
+from openalgo import ta
+
+# Rolling math:    ta.sma, ta.ema, ta.wma, ta.stdev, ta.highest, ta.lowest
+# Price action:    ta.true_range, ta.atr, ta.change, ta.roc
+# Bands/channels:  ta.bbands, ta.keltner, ta.donchian
+# Signals:         ta.crossover, ta.crossunder, ta.exrem, ta.rising, ta.falling
 ```
 
 ## Common Custom Indicator Patterns
